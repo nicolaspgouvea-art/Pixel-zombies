@@ -1,0 +1,1036 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+  <title>Última Bala — FPS Pixel</title>
+  <style>
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: #080b0c;
+      color: #f4f0d9;
+      font-family: "Courier New", monospace;
+      touch-action: none;
+      user-select: none;
+    }
+
+    #game {
+      display: block;
+      width: 100vw;
+      height: 100vh;
+      object-fit: contain;
+      image-rendering: pixelated;
+      cursor: crosshair;
+    }
+
+    #hud {
+      position: fixed;
+      top: 16px;
+      left: 16px;
+      z-index: 2;
+      padding: 10px 12px;
+      background: #09100dcc;
+      border: 2px solid #66765b;
+      box-shadow: 4px 4px 0 #0008;
+      font-size: 14px;
+      line-height: 1.5;
+      text-shadow: 2px 2px #000;
+    }
+
+    #healthTrack {
+      width: 130px;
+      height: 10px;
+      margin-top: 5px;
+      background: #381c1d;
+      border: 1px solid #d6c7a0;
+    }
+
+    #healthFill {
+      width: 100%;
+      height: 100%;
+      background: #9ddd69;
+    }
+
+    #banner {
+      position: fixed;
+      top: 24%;
+      left: 50%;
+      z-index: 2;
+      transform: translateX(-50%);
+      color: #ffe7a4;
+      font-weight: bold;
+      font-size: clamp(18px, 4vw, 34px);
+      text-shadow: 3px 3px #000, -1px -1px #000;
+      white-space: nowrap;
+      pointer-events: none;
+    }
+
+    #overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 5;
+      display: grid;
+      place-items: center;
+      padding: 20px;
+      background: #030806b8;
+    }
+
+    #panel {
+      width: min(480px, 100%);
+      padding: 28px;
+      text-align: center;
+      background: #172019;
+      border: 4px solid #a8bb79;
+      box-shadow: 8px 8px 0 #0009, inset 0 0 0 4px #354c38;
+    }
+
+    h1 {
+      margin: 0 0 12px;
+      color: #e8f2b0;
+      font-size: clamp(27px, 7vw, 48px);
+      line-height: 1;
+      text-shadow: 4px 4px #36542f;
+    }
+
+    #description {
+      line-height: 1.55;
+      color: #d3dac4;
+    }
+
+    button {
+      font: bold 18px "Courier New", monospace;
+      color: #172019;
+      background: #d8ed94;
+      border: 0;
+      padding: 13px 24px;
+      box-shadow: 5px 5px 0 #536c44;
+      cursor: pointer;
+      touch-action: none;
+    }
+
+    button:active {
+      transform: translate(3px, 3px);
+      box-shadow: 2px 2px 0 #536c44;
+    }
+
+    #mobileControls { display: none; }
+
+    #stick {
+      position: fixed;
+      bottom: 25px;
+      left: 25px;
+      z-index: 3;
+      width: 120px;
+      height: 120px;
+      border: 3px solid #d8ed9488;
+      border-radius: 50%;
+      background: #17201988;
+      touch-action: none;
+    }
+
+    #knob {
+      position: absolute;
+      top: 39px;
+      left: 39px;
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      background: #d8ed94bb;
+    }
+
+    #fire {
+      position: fixed;
+      right: 30px;
+      bottom: 35px;
+      z-index: 3;
+      width: 92px;
+      height: 92px;
+      border: 3px solid #ffe4b7;
+      border-radius: 50%;
+      background: #a63c32d9;
+      color: #fff4df;
+      box-shadow: 4px 4px 0 #421b1b;
+    }
+
+    @media (pointer: coarse) {
+      #mobileControls { display: block; }
+      #hud { top: 8px; left: 8px; font-size: 11px; }
+      #healthTrack { width: 100px; }
+    }
+  </style>
+</head>
+<body>
+  <canvas id="game" width="400" height="225"></canvas>
+
+  <div id="hud">
+    VIDA: <span id="healthText">100</span>
+    <div id="healthTrack"><div id="healthFill"></div></div>
+    ONDA: <span id="waveText">1</span><br>
+    PONTOS: <span id="scoreText">0</span><br>
+    MUNIÇÃO: ∞
+  </div>
+
+  <div id="banner"></div>
+
+  <div id="overlay">
+    <div id="panel">
+      <h1 id="title">ÚLTIMA BALA</h1>
+      <p id="description">
+        Sobreviva às ondas de zumbis. Sua pistola tem munição infinita.<br><br>
+        <strong>PC:</strong> WASD para andar, mouse para mirar, clique ou Espaço para atirar.
+        Shift para correr.<br>
+        <strong>Celular:</strong> controle esquerdo para andar, arraste a tela para mirar e toque em ATIRAR.
+      </p>
+      <button id="start">COMEÇAR</button>
+    </div>
+  </div>
+
+  <div id="mobileControls">
+    <div id="stick"><div id="knob"></div></div>
+    <button id="fire">ATIRAR</button>
+  </div>
+
+  <script>
+    (() => {
+      "use strict";
+
+      const canvas = document.querySelector("#game");
+      const ctx = canvas.getContext("2d", { alpha: false });
+      ctx.imageSmoothingEnabled = false;
+
+      const W = canvas.width;
+      const H = canvas.height;
+      const FOV = Math.PI / 2.9;
+      const PLANE = Math.tan(FOV / 2);
+
+      const map = [
+        "################",
+        "#......#.......#",
+        "#......#.......#",
+        "#..............#",
+        "#..##.....##...#",
+        "#..............#",
+        "#......##......#",
+        "#..............#",
+        "#...#......#...#",
+        "#..............#",
+        "#..##.....##...#",
+        "#..............#",
+        "#......##......#",
+        "#..............#",
+        "#..............#",
+        "################"
+      ];
+
+      const ui = {
+        overlay: document.querySelector("#overlay"),
+        title: document.querySelector("#title"),
+        description: document.querySelector("#description"),
+        start: document.querySelector("#start"),
+        banner: document.querySelector("#banner"),
+        hp: document.querySelector("#healthText"),
+        hpBar: document.querySelector("#healthFill"),
+        wave: document.querySelector("#waveText"),
+        score: document.querySelector("#scoreText"),
+        stick: document.querySelector("#stick"),
+        knob: document.querySelector("#knob"),
+        fire: document.querySelector("#fire")
+      };
+
+      const touchDevice = matchMedia("(pointer: coarse)").matches;
+      const keys = new Set();
+      const zBuffer = new Float32Array(W);
+      const player = { x: 3.5, y: 3.5, angle: 0, hp: 100 };
+
+      let zombies = [];
+      let wave = 1;
+      let score = 0;
+      let running = false;
+      let waveTimer = 0;
+      let bannerTimer = 0;
+      let flash = 0;
+      let recoil = 0;
+      let hurt = 0;
+      let lastShot = 0;
+      let lastFrame = performance.now();
+      let walkTime = 0;
+      let pathTimer = 0;
+      let pathField = [];
+      let fireHeld = false;
+      let stickPointer = null;
+      let lookPointer = null;
+      let lookX = 0;
+      let stickX = 0;
+      let stickY = 0;
+      let audioContext = null;
+
+      function solid(x, y) {
+        return map[Math.floor(y)]?.[Math.floor(x)] !== ".";
+      }
+
+      function canStand(x, y, radius) {
+        return !solid(x - radius, y - radius) &&
+               !solid(x + radius, y - radius) &&
+               !solid(x - radius, y + radius) &&
+               !solid(x + radius, y + radius);
+      }
+
+      function move(entity, dx, dy, radius) {
+        if (canStand(entity.x + dx, entity.y, radius)) entity.x += dx;
+        if (canStand(entity.x, entity.y + dy, radius)) entity.y += dy;
+      }
+
+      function sound(frequency, duration, type, volume) {
+        try {
+          audioContext ??= new (window.AudioContext || window.webkitAudioContext)();
+          if (audioContext.state === "suspended") audioContext.resume();
+
+          const oscillator = audioContext.createOscillator();
+          const gain = audioContext.createGain();
+          const now = audioContext.currentTime;
+
+          oscillator.type = type;
+          oscillator.frequency.setValueAtTime(frequency, now);
+          oscillator.frequency.exponentialRampToValueAtTime(
+            Math.max(40, frequency * 0.35), now + duration
+          );
+          gain.gain.setValueAtTime(volume, now);
+          gain.gain.exponentialRampToValueAtTime(0.001, now + duration);
+
+          oscillator.connect(gain).connect(audioContext.destination);
+          oscillator.start(now);
+          oscillator.stop(now + duration);
+        } catch (_) {
+          // O jogo continua funcionando caso o navegador bloqueie áudio.
+        }
+      }
+
+      function makeZombieSprite(coat, skin) {
+        const sprite = document.createElement("canvas");
+        sprite.width = 24;
+        sprite.height = 32;
+        const s = sprite.getContext("2d");
+        s.imageSmoothingEnabled = false;
+
+        const pixel = (x, y, w, h, color) => {
+          s.fillStyle = color;
+          s.fillRect(x, y, w, h);
+        };
+
+        pixel(5, 24, 6, 6, "#263b38");
+        pixel(13, 24, 6, 6, "#263b38");
+        pixel(4, 29, 7, 3, "#171f21");
+        pixel(13, 29, 8, 3, "#171f21");
+
+        pixel(1, 15, 5, 4, coat);
+        pixel(18, 15, 5, 4, coat);
+        pixel(0, 18, 5, 5, skin);
+        pixel(19, 18, 5, 5, skin);
+        pixel(1, 21, 4, 2, "#5d794b");
+        pixel(19, 21, 4, 2, "#5d794b");
+
+        pixel(5, 13, 14, 13, "#101b1a");
+        pixel(6, 14, 12, 11, coat);
+        pixel(10, 14, 4, 8, "#344947");
+        pixel(7, 19, 3, 4, "#742f35");
+        pixel(16, 17, 2, 5, "#742f35");
+        pixel(9, 24, 6, 2, "#1c2927");
+
+        pixel(6, 3, 12, 12, "#25332b");
+        pixel(7, 5, 10, 9, skin);
+        pixel(5, 4, 3, 6, skin);
+        pixel(16, 4, 3, 6, skin);
+        pixel(6, 2, 12, 4, "#1b2522");
+        pixel(7, 6, 2, 2, "#577447");
+        pixel(15, 9, 2, 3, "#5c7750");
+
+        pixel(8, 8, 3, 2, "#f6ba87");
+        pixel(14, 8, 3, 2, "#f6ba87");
+        pixel(9, 8, 1, 2, "#a9272e");
+        pixel(15, 8, 1, 2, "#a9272e");
+        pixel(10, 12, 5, 2, "#29332b");
+        pixel(11, 12, 1, 1, "#e1d0a2");
+        pixel(14, 12, 1, 1, "#e1d0a2");
+
+        return sprite;
+      }
+
+      const zombieSprites = [
+        makeZombieSprite("#704744", "#91aa6c"),
+        makeZombieSprite("#536b68", "#9cb97b"),
+        makeZombieSprite("#69566f", "#87a66c")
+      ];
+
+      function makeGunSprite() {
+        const gun = document.createElement("canvas");
+        gun.width = 96;
+        gun.height = 90;
+        const g = gun.getContext("2d");
+        g.imageSmoothingEnabled = false;
+        const rect = (x, y, w, h, color) => {
+          g.fillStyle = color;
+          g.fillRect(x, y, w, h);
+        };
+
+        rect(15, 61, 29, 29, "#171d1d");
+        rect(19, 58, 26, 32, "#9b7358");
+        rect(22, 61, 21, 29, "#c0946d");
+        rect(52, 59, 28, 31, "#171d1d");
+        rect(52, 57, 24, 33, "#a77d60");
+        rect(54, 61, 19, 29, "#c79a70");
+        rect(28, 53, 16, 12, "#d4aa7d");
+        rect(52, 52, 16, 13, "#d4aa7d");
+
+        rect(37, 1, 22, 31, "#101718");
+        rect(40, 3, 16, 27, "#394a4b");
+        rect(43, 3, 10, 5, "#758281");
+        rect(35, 25, 26, 13, "#11191a");
+        rect(38, 26, 20, 9, "#536262");
+        rect(40, 35, 16, 27, "#0e1717");
+        rect(43, 38, 10, 23, "#313b38");
+        rect(45, 42, 6, 14, "#53605a");
+        rect(35, 32, 5, 9, "#253031");
+        rect(56, 32, 5, 9, "#253031");
+        rect(43, 8, 10, 3, "#141b1b");
+        rect(46, 0, 4, 3, "#b8bca6");
+
+        return gun;
+      }
+
+      const gunSprite = makeGunSprite();
+
+      function showBanner(message, seconds = 1.5) {
+        ui.banner.textContent = message;
+        bannerTimer = seconds;
+      }
+
+      function spawnWave() {
+        const count = Math.min(4 + wave * 2, 20);
+        let attempts = 0;
+
+        while (zombies.length < count && attempts++ < 2000) {
+          const x = 1 + Math.floor(Math.random() * 14) + 0.5;
+          const y = 1 + Math.floor(Math.random() * 14) + 0.5;
+          const distance = Math.hypot(x - player.x, y - player.y);
+
+          if (solid(x, y) || distance < 4.2) continue;
+          if (zombies.some(z => Math.hypot(z.x - x, z.y - y) < 0.8)) continue;
+
+          zombies.push({
+            x, y,
+            hp: wave >= 4 ? 2 : 1,
+            speed: Math.min(0.95, 0.38 + wave * 0.045),
+            attack: Math.random() * 0.5,
+            phase: Math.random() * Math.PI * 2,
+            sprite: zombieSprites[Math.floor(Math.random() * zombieSprites.length)]
+          });
+        }
+
+        showBanner("ONDA " + wave, 2);
+      }
+
+      function resetGame() {
+        player.x = 3.5;
+        player.y = 3.5;
+        player.angle = 0;
+        player.hp = 100;
+        zombies = [];
+        wave = 1;
+        score = 0;
+        waveTimer = 0;
+        flash = 0;
+        recoil = 0;
+        hurt = 0;
+        fireHeld = false;
+        lastShot = 0;
+        spawnWave();
+        updateHud();
+      }
+
+      function startGame() {
+        resetGame();
+        running = true;
+        ui.overlay.style.display = "none";
+        if (!touchDevice) canvas.requestPointerLock?.();
+      }
+
+      function gameOver() {
+        running = false;
+        fireHeld = false;
+        document.exitPointerLock?.();
+        ui.title.textContent = "FIM DE JOGO";
+        ui.description.innerHTML =
+          `Você chegou à onda <strong>${wave}</strong> e fez ` +
+          `<strong>${score}</strong> pontos.<br><br>Tente sobreviver mais tempo!`;
+        ui.start.textContent = "JOGAR DE NOVO";
+        ui.overlay.style.display = "grid";
+        sound(90, 0.45, "sawtooth", 0.13);
+      }
+
+      function updateHud() {
+        ui.hp.textContent = Math.max(0, player.hp);
+        ui.hpBar.style.width = Math.max(0, player.hp) + "%";
+        ui.hpBar.style.background = player.hp > 35 ? "#9ddd69" : "#e56b58";
+        ui.wave.textContent = wave;
+        ui.score.textContent = score;
+      }
+
+      function lineOfSight(x1, y1, x2, y2) {
+        const dx = x2 - x1;
+        const dy = y2 - y1;
+        const distance = Math.hypot(dx, dy);
+        const steps = Math.ceil(distance / 0.09);
+
+        for (let i = 1; i < steps; i++) {
+          const t = i / steps;
+          if (solid(x1 + dx * t, y1 + dy * t)) return false;
+        }
+        return true;
+      }
+
+      function shoot() {
+        if (!running) return;
+
+        const now = performance.now();
+        if (now - lastShot < 240) return;
+        lastShot = now;
+        flash = 0.085;
+        recoil = 0.16;
+        sound(150, 0.12, "sawtooth", 0.11);
+
+        const forwardX = Math.cos(player.angle);
+        const forwardY = Math.sin(player.angle);
+        const rightX = -forwardY;
+        const rightY = forwardX;
+
+        let target = null;
+        let closest = Infinity;
+
+        for (const z of zombies) {
+          const dx = z.x - player.x;
+          const dy = z.y - player.y;
+          const depth = dx * forwardX + dy * forwardY;
+          const side = dx * rightX + dy * rightY;
+
+          if (depth <= 0 || depth > 15 || Math.abs(side) > 0.28) continue;
+          if (depth >= closest || !lineOfSight(player.x, player.y, z.x, z.y)) continue;
+
+          closest = depth;
+          target = z;
+        }
+
+        if (target) {
+          target.hp--;
+          sound(65, 0.13, "square", 0.045);
+          if (target.hp <= 0) {
+            zombies.splice(zombies.indexOf(target), 1);
+            score += 100;
+            if (zombies.length === 0) {
+              waveTimer = 1.8;
+              showBanner("ÁREA LIMPA!", 1.4);
+            }
+          }
+        }
+
+        updateHud();
+      }
+
+      function buildPathField() {
+        pathField = map.map(row => Array(row.length).fill(Infinity));
+        const startX = Math.floor(player.x);
+        const startY = Math.floor(player.y);
+        const queue = [[startX, startY]];
+        pathField[startY][startX] = 0;
+
+        for (let index = 0; index < queue.length; index++) {
+          const [x, y] = queue[index];
+          for (const [nx, ny] of [[x + 1, y], [x - 1, y], [x, y + 1], [x, y - 1]]) {
+            if (map[ny]?.[nx] !== ".") continue;
+            if (pathField[ny][nx] !== Infinity) continue;
+            pathField[ny][nx] = pathField[y][x] + 1;
+            queue.push([nx, ny]);
+          }
+        }
+      }
+
+      function update(dt) {
+        if (!running) return;
+
+        flash = Math.max(0, flash - dt);
+        recoil = Math.max(0, recoil - dt);
+        hurt = Math.max(0, hurt - dt);
+        bannerTimer = Math.max(0, bannerTimer - dt);
+        if (bannerTimer === 0) ui.banner.textContent = "";
+
+        if (keys.has("ArrowLeft")) player.angle -= dt * 2.2;
+        if (keys.has("ArrowRight")) player.angle += dt * 2.2;
+
+        let forward = Number(keys.has("KeyW") || keys.has("ArrowUp")) -
+                      Number(keys.has("KeyS") || keys.has("ArrowDown"));
+        let strafe = Number(keys.has("KeyD")) - Number(keys.has("KeyA"));
+
+        forward += -stickY;
+        strafe += stickX;
+
+        const magnitude = Math.hypot(forward, strafe);
+        if (magnitude > 1) {
+          forward /= magnitude;
+          strafe /= magnitude;
+        }
+
+        const speed = keys.has("ShiftLeft") || keys.has("ShiftRight") ? 3.7 : 2.65;
+        const c = Math.cos(player.angle);
+        const s = Math.sin(player.angle);
+
+        move(
+          player,
+          (c * forward - s * strafe) * speed * dt,
+          (s * forward + c * strafe) * speed * dt,
+          0.2
+        );
+
+        if (magnitude > 0.08) walkTime += dt * speed * 5;
+        if (fireHeld || keys.has("Space")) shoot();
+
+        pathTimer -= dt;
+        if (pathTimer <= 0) {
+          buildPathField();
+          pathTimer = 0.35;
+        }
+
+        for (const z of zombies) {
+          z.attack -= dt;
+          z.phase += dt * 5;
+
+          const dx = player.x - z.x;
+          const dy = player.y - z.y;
+          const distance = Math.hypot(dx, dy);
+
+          if (distance < 0.72) {
+            if (z.attack <= 0) {
+              player.hp = Math.max(0, player.hp - 12);
+              z.attack = 0.85;
+              hurt = 0.28;
+              sound(80, 0.16, "triangle", 0.09);
+              updateHud();
+              if (player.hp <= 0) {
+                gameOver();
+                break;
+              }
+            }
+            continue;
+          }
+
+          let targetX = player.x;
+          let targetY = player.y;
+
+          if (!lineOfSight(z.x, z.y, player.x, player.y)) {
+            const cellX = Math.floor(z.x);
+            const cellY = Math.floor(z.y);
+            let best = pathField[cellY]?.[cellX] ?? Infinity;
+
+            for (const [nx, ny] of [
+              [cellX + 1, cellY],
+              [cellX - 1, cellY],
+              [cellX, cellY + 1],
+              [cellX, cellY - 1]
+            ]) {
+              const value = pathField[ny]?.[nx] ?? Infinity;
+              if (value < best) {
+                best = value;
+                targetX = nx + 0.5;
+                targetY = ny + 0.5;
+              }
+            }
+          }
+
+          const tx = targetX - z.x;
+          const ty = targetY - z.y;
+          const length = Math.hypot(tx, ty) || 1;
+          move(z, tx / length * z.speed * dt, ty / length * z.speed * dt, 0.21);
+        }
+
+        if (waveTimer > 0) {
+          waveTimer -= dt;
+          if (waveTimer <= 0) {
+            wave++;
+            player.hp = Math.min(100, player.hp + 15);
+            spawnWave();
+            updateHud();
+          }
+        }
+      }
+
+      function castRay(rayX, rayY) {
+        let mapX = Math.floor(player.x);
+        let mapY = Math.floor(player.y);
+        const deltaX = Math.abs(1 / rayX);
+        const deltaY = Math.abs(1 / rayY);
+
+        let stepX, stepY, sideX, sideY;
+
+        if (rayX < 0) {
+          stepX = -1;
+          sideX = (player.x - mapX) * deltaX;
+        } else {
+          stepX = 1;
+          sideX = (mapX + 1 - player.x) * deltaX;
+        }
+
+        if (rayY < 0) {
+          stepY = -1;
+          sideY = (player.y - mapY) * deltaY;
+        } else {
+          stepY = 1;
+          sideY = (mapY + 1 - player.y) * deltaY;
+        }
+
+        let side = 0;
+        for (let i = 0; i < 32; i++) {
+          if (sideX < sideY) {
+            sideX += deltaX;
+            mapX += stepX;
+            side = 0;
+          } else {
+            sideY += deltaY;
+            mapY += stepY;
+            side = 1;
+          }
+          if (map[mapY]?.[mapX] !== ".") break;
+        }
+
+        const distance = Math.max(
+          0.01,
+          side === 0 ? sideX - deltaX : sideY - deltaY
+        );
+        let textureX = side === 0
+          ? player.y + distance * rayY
+          : player.x + distance * rayX;
+        textureX -= Math.floor(textureX);
+
+        return { distance, textureX, side };
+      }
+
+      function renderBackground() {
+        ctx.fillStyle = "#293a3a";
+        ctx.fillRect(0, 0, W, H / 2);
+        ctx.fillStyle = "#354847";
+        ctx.fillRect(0, 49, W, 35);
+        ctx.fillStyle = "#4b5044";
+        ctx.fillRect(0, 95, W, 18);
+
+        ctx.fillStyle = "#31362f";
+        ctx.fillRect(0, H / 2, W, H / 2);
+        for (let y = 116; y < H; y += 5) {
+          const shade = Math.min(48, 25 + Math.floor((y - 116) * 0.17));
+          ctx.fillStyle = `rgb(${shade},${shade + 5},${shade})`;
+          ctx.fillRect(0, y, W, 5);
+        }
+      }
+
+      function renderWalls() {
+        const dirX = Math.cos(player.angle);
+        const dirY = Math.sin(player.angle);
+        const planeX = -dirY * PLANE;
+        const planeY = dirX * PLANE;
+
+        for (let x = 0; x < W; x++) {
+          const cameraX = 2 * x / W - 1;
+          const ray = castRay(
+            dirX + planeX * cameraX,
+            dirY + planeY * cameraX
+          );
+          zBuffer[x] = ray.distance;
+
+          const height = Math.min(H * 5, H / ray.distance);
+          const top = Math.floor((H - height) / 2);
+          const bottom = Math.ceil(top + height);
+          const light = Math.max(0.32, 1 - ray.distance / 18) *
+                        (ray.side ? 0.75 : 1);
+
+          const r = Math.floor(91 * light);
+          const g = Math.floor(109 * light);
+          const b = Math.floor(92 * light);
+
+          ctx.fillStyle = `rgb(${r},${g},${b})`;
+          ctx.fillRect(x, Math.max(0, top), 1, Math.min(H, bottom) - Math.max(0, top));
+
+          const brickHeight = height / 5;
+          ctx.fillStyle = `rgb(${Math.floor(r * 0.48)},${Math.floor(g * 0.5)},${Math.floor(b * 0.48)})`;
+
+          for (let row = 0; row <= 5; row++) {
+            const mortarY = Math.floor(top + row * brickHeight);
+            if (mortarY >= 0 && mortarY < H) ctx.fillRect(x, mortarY, 1, Math.max(1, height / 65));
+
+            const seam = row % 2 ? 0.25 : 0.75;
+            if (Math.abs(ray.textureX - seam) < 0.015) {
+              const from = Math.max(0, Math.floor(top + row * brickHeight));
+              const to = Math.min(H, Math.ceil(top + (row + 1) * brickHeight));
+              if (to > from) ctx.fillRect(x, from, 1, to - from);
+            }
+          }
+
+          if (ray.textureX < 0.035 || ray.textureX > 0.965) {
+            ctx.fillStyle = `rgb(${Math.floor(r * 0.55)},${Math.floor(g * 0.55)},${Math.floor(b * 0.55)})`;
+            ctx.fillRect(x, Math.max(0, top), 1, Math.min(H, bottom) - Math.max(0, top));
+          }
+        }
+      }
+
+      function renderZombies() {
+        const dirX = Math.cos(player.angle);
+        const dirY = Math.sin(player.angle);
+        const rightX = -dirY;
+        const rightY = dirX;
+
+        const visible = zombies.map(z => {
+          const dx = z.x - player.x;
+          const dy = z.y - player.y;
+          return {
+            z,
+            depth: dx * dirX + dy * dirY,
+            side: dx * rightX + dy * rightY
+          };
+        }).filter(item => item.depth > 0.15)
+          .sort((a, b) => b.depth - a.depth);
+
+        for (const item of visible) {
+          const height = H / item.depth * 0.88;
+          const width = height * 24 / 32;
+          const centerX = W / 2 + item.side / (item.depth * PLANE) * W / 2;
+          const left = centerX - width / 2;
+          const bob = Math.sin(item.z.phase) * Math.min(2.5, height * 0.025);
+          const top = (H - height) / 2 + height * 0.12 + bob;
+
+          if (left > W || left + width < 0) continue;
+
+          for (
+            let screenX = Math.max(0, Math.floor(left));
+            screenX < Math.min(W, Math.ceil(left + width));
+            screenX++
+          ) {
+            if (item.depth > zBuffer[screenX] + 0.12) continue;
+            const sourceX = Math.max(
+              0,
+              Math.min(23, Math.floor((screenX - left) / width * 24))
+            );
+            ctx.drawImage(
+              item.z.sprite,
+              sourceX, 0, 1, 32,
+              screenX, Math.floor(top), 1, Math.ceil(height)
+            );
+          }
+        }
+      }
+
+      function renderGun() {
+        const moving = keys.has("KeyW") || keys.has("KeyS") ||
+                       keys.has("KeyA") || keys.has("KeyD") ||
+                       Math.abs(stickX) + Math.abs(stickY) > 0.1;
+        const bob = moving ? Math.sin(walkTime) * 2 : 0;
+        const kick = recoil > 0 ? Math.sin(recoil / 0.16 * Math.PI) * 9 : 0;
+        const gunY = H - 79 + bob + kick;
+
+        if (flash > 0) {
+          ctx.fillStyle = "#ffef9a";
+          ctx.beginPath();
+          ctx.moveTo(W / 2, gunY - 24);
+          ctx.lineTo(W / 2 - 6, gunY - 7);
+          ctx.lineTo(W / 2 - 16, gunY - 5);
+          ctx.lineTo(W / 2 - 6, gunY + 1);
+          ctx.lineTo(W / 2 + 6, gunY + 1);
+          ctx.lineTo(W / 2 + 16, gunY - 5);
+          ctx.lineTo(W / 2 + 6, gunY - 7);
+          ctx.closePath();
+          ctx.fill();
+          ctx.fillStyle = "#fffdf0";
+          ctx.fillRect(W / 2 - 3, gunY - 10, 6, 11);
+        }
+
+        ctx.drawImage(gunSprite, W / 2 - 48, Math.floor(gunY));
+      }
+
+      function renderCrosshair() {
+        const x = W / 2;
+        const y = H / 2;
+        ctx.fillStyle = "#101915";
+        ctx.fillRect(x - 7, y - 1, 5, 3);
+        ctx.fillRect(x + 3, y - 1, 5, 3);
+        ctx.fillRect(x - 1, y - 7, 3, 5);
+        ctx.fillRect(x - 1, y + 3, 3, 5);
+        ctx.fillStyle = "#e7efcc";
+        ctx.fillRect(x - 6, y, 4, 1);
+        ctx.fillRect(x + 3, y, 4, 1);
+        ctx.fillRect(x, y - 6, 1, 4);
+        ctx.fillRect(x, y + 3, 1, 4);
+      }
+
+      function renderMinimap() {
+        const scale = 4;
+        const originX = W - 73;
+        const originY = 8;
+
+        ctx.fillStyle = "#07100dcc";
+        ctx.fillRect(originX - 3, originY - 3, 70, 70);
+
+        for (let y = 0; y < map.length; y++) {
+          for (let x = 0; x < map[y].length; x++) {
+            ctx.fillStyle = map[y][x] === "#" ? "#607565" : "#26342e";
+            ctx.fillRect(originX + x * scale, originY + y * scale, scale - 1, scale - 1);
+          }
+        }
+
+        ctx.fillStyle = "#d65f53";
+        for (const z of zombies) {
+          ctx.fillRect(originX + z.x * scale - 1, originY + z.y * scale - 1, 3, 3);
+        }
+
+        ctx.fillStyle = "#f2ed9f";
+        ctx.fillRect(originX + player.x * scale - 2, originY + player.y * scale - 2, 4, 4);
+        ctx.strokeStyle = "#f2ed9f";
+        ctx.beginPath();
+        ctx.moveTo(originX + player.x * scale, originY + player.y * scale);
+        ctx.lineTo(
+          originX + (player.x + Math.cos(player.angle) * 2) * scale,
+          originY + (player.y + Math.sin(player.angle) * 2) * scale
+        );
+        ctx.stroke();
+      }
+
+      function render() {
+        renderBackground();
+        renderWalls();
+        renderZombies();
+        renderGun();
+        renderCrosshair();
+        renderMinimap();
+
+        if (hurt > 0) {
+          ctx.fillStyle = `rgba(170, 25, 20, ${hurt * 0.65})`;
+          ctx.fillRect(0, 0, W, H);
+        }
+      }
+
+      function frame(now) {
+        const dt = Math.min(0.05, (now - lastFrame) / 1000);
+        lastFrame = now;
+        update(dt);
+        render();
+        requestAnimationFrame(frame);
+      }
+
+      ui.start.addEventListener("click", startGame);
+
+      window.addEventListener("keydown", event => {
+        if ([
+          "Space", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"
+        ].includes(event.code)) event.preventDefault();
+        keys.add(event.code);
+      });
+
+      window.addEventListener("keyup", event => keys.delete(event.code));
+
+      window.addEventListener("blur", () => {
+        keys.clear();
+        fireHeld = false;
+      });
+
+      document.addEventListener("visibilitychange", () => {
+        lastFrame = performance.now();
+        if (document.hidden) {
+          keys.clear();
+          fireHeld = false;
+        }
+      });
+
+      document.addEventListener("mousemove", event => {
+        if (running && document.pointerLockElement === canvas) {
+          player.angle += event.movementX * 0.0028;
+        }
+      });
+
+      canvas.addEventListener("mousedown", event => {
+        if (!running || event.button !== 0) return;
+        if (!touchDevice && document.pointerLockElement !== canvas) {
+          canvas.requestPointerLock?.();
+        }
+        shoot();
+        fireHeld = true;
+      });
+
+      window.addEventListener("mouseup", () => { fireHeld = false; });
+
+      canvas.addEventListener("pointerdown", event => {
+        if (!touchDevice || !running) return;
+        lookPointer = event.pointerId;
+        lookX = event.clientX;
+        canvas.setPointerCapture(event.pointerId);
+      });
+
+      canvas.addEventListener("pointermove", event => {
+        if (event.pointerId !== lookPointer || !running) return;
+        player.angle += (event.clientX - lookX) * 0.008;
+        lookX = event.clientX;
+      });
+
+      canvas.addEventListener("pointerup", event => {
+        if (event.pointerId === lookPointer) lookPointer = null;
+      });
+
+      function updateStick(event) {
+        const box = ui.stick.getBoundingClientRect();
+        const centerX = box.left + box.width / 2;
+        const centerY = box.top + box.height / 2;
+        let dx = event.clientX - centerX;
+        let dy = event.clientY - centerY;
+        const length = Math.hypot(dx, dy);
+        if (length > 43) {
+          dx = dx / length * 43;
+          dy = dy / length * 43;
+        }
+        stickX = dx / 43;
+        stickY = dy / 43;
+        ui.knob.style.transform = `translate(${dx}px, ${dy}px)`;
+      }
+
+      ui.stick.addEventListener("pointerdown", event => {
+        stickPointer = event.pointerId;
+        ui.stick.setPointerCapture(event.pointerId);
+        updateStick(event);
+      });
+
+      ui.stick.addEventListener("pointermove", event => {
+        if (event.pointerId === stickPointer) updateStick(event);
+      });
+
+      function releaseStick(event) {
+        if (event.pointerId !== stickPointer) return;
+        stickPointer = null;
+        stickX = 0;
+        stickY = 0;
+        ui.knob.style.transform = "";
+      }
+
+      ui.stick.addEventListener("pointerup", releaseStick);
+      ui.stick.addEventListener("pointercancel", releaseStick);
+
+      ui.fire.addEventListener("pointerdown", event => {
+        event.preventDefault();
+        ui.fire.setPointerCapture(event.pointerId);
+        fireHeld = true;
+        shoot();
+      });
+
+      ui.fire.addEventListener("pointerup", () => { fireHeld = false; });
+      ui.fire.addEventListener("pointercancel", () => { fireHeld = false; });
+
+      resetGame();
+      requestAnimationFrame(frame);
+    })();
+  </script>
+</body>
+</html>
